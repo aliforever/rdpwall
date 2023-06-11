@@ -1,4 +1,4 @@
-module quantom
+module github.com/aliforever/rdpwall
 
 go 1.20
 
