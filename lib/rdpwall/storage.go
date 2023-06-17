@@ -2,7 +2,6 @@ package rdpwall
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -165,8 +164,6 @@ func (s *FileStorage) sync() {
 	if err != nil {
 		panic(err)
 	}
-
-	fmt.Println("synced")
 }
 
 func (s *FileStorage) BlockIP(ip string) error {

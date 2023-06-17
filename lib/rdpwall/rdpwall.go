@@ -191,6 +191,9 @@ func (q *Quantom) PendBlockIPs() {
 		}
 
 		for ip, audits := range data {
+			if ip == "" {
+				continue
+			}
 			if len(audits) > 3 {
 				exists, err := q.storage.PendBlockIP(ip)
 				if err != nil {
