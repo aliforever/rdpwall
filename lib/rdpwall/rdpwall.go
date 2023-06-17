@@ -5,6 +5,7 @@ import (
 	"github.com/Velocidex/ordereddict"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 	"www.velocidex.com/golang/evtx"
 )
@@ -191,7 +192,7 @@ func (q *Quantom) PendBlockIPs() {
 		}
 
 		for ip, audits := range data {
-			if ip == "" {
+			if ip == "" || strings.Count(ip, ".") != 3 {
 				continue
 			}
 			if len(audits) > 3 {
