@@ -22,6 +22,11 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Vet and test
+        run: |
+          GOOS=windows GOARCH=amd64 go vet ./...
+          go test ./...
+
       - name: Build Windows binary
         run: |
           GOOS=windows GOARCH=amd64 go build \

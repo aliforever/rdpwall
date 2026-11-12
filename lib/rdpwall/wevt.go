@@ -63,19 +63,26 @@ func evtQueryXML(channel, query string) ([]string, error) {
 			uintptr(unsafe.Pointer(&returned)),
 		)
 		if r == 0 {
-			// ERROR_NO_MORE_ITEMS = normal end of result set
+			// ERROR_NO_MORE_ITEMS = normal end of result set. Anything else
+			// means the result is incomplete, and callers must not act on it.
 			if e != windows.ERROR_NO_MORE_ITEMS {
-				_ = e // ignore other errors — return what we have
+				return nil, fmt.Errorf("EvtNext: %w", e)
 			}
 			break
 		}
 
+		var renderErr error
 		for i := uint32(0); i < returned; i++ {
-			xml, err := renderEventXML(handles[i])
-			procEvtClose.Call(handles[i])
-			if err == nil {
-				results = append(results, xml)
+			if renderErr == nil {
+				var xml string
+				if xml, renderErr = renderEventXML(handles[i]); renderErr == nil {
+					results = append(results, xml)
+				}
 			}
+			procEvtClose.Call(handles[i])
+		}
+		if renderErr != nil {
+			return nil, renderErr
 		}
 	}
 
@@ -101,7 +108,7 @@ func renderEventXML(h uintptr) (string, error) {
 		if r != 0 {
 			break // success
 		}
-		if e == windows.ERROR_INSUFFICIENT_BUFFER {
+		if e == windows.ERROR_INSUFFICIENT_BUFFER && bufferUsed > bufferSize {
 			bufferSize = bufferUsed
 			buffer = make([]byte, bufferSize)
 			continue
