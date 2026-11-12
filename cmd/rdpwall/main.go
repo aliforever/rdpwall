@@ -184,6 +184,12 @@ func disableStartup() error {
 //go:embed tray.ico
 var trayIcon []byte
 
+// The executable's own icon (Explorer, taskbar, console title bar) comes from
+// rsrc_windows_amd64.syso, which the Go linker picks up by its file name.
+// Run "go generate" after changing assets/app.ico.
+//
+//go:generate go run github.com/akavel/rsrc@v0.10.2 -arch amd64 -ico ../../assets/app.ico -o rsrc_windows_amd64.syso
+
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 func main() {
