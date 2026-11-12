@@ -3,8 +3,8 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/base64"
-	"encoding/binary"
 	"fmt"
 	"os"
 	"os/exec"
@@ -174,69 +174,15 @@ func disableStartup() error {
 	return removeLegacyRunValue()
 }
 
-// ── ICO generator ────────────────────────────────────────────────────────────
+// ── Tray icon ────────────────────────────────────────────────────────────────
 
-// generateTrayIcon returns a 16×16 32-bpp ICO file as a byte slice.
-// The icon is a solid dark-red square (no CGo, no external files).
-func generateTrayIcon() []byte {
-	const (
-		w, h       = 16, 16
-		bpp        = 32
-		r8, g8, b8 = 0x99, 0x00, 0x00 // dark red
-	)
-
-	pixelBytes := w * h * 4 // BGRA
-	andMaskBytes := h * ((w + 31) / 32 * 4)
-
-	biSizeImage := pixelBytes
-	biSize := 40
-	icoHeaderSize := 6
-	icoDirEntrySize := 16
-	imageDataOffset := icoHeaderSize + icoDirEntrySize
-
-	totalSize := imageDataOffset + biSize + pixelBytes + andMaskBytes
-	buf := make([]byte, totalSize)
-
-	// ICONDIR
-	binary.LittleEndian.PutUint16(buf[0:], 0) // reserved
-	binary.LittleEndian.PutUint16(buf[2:], 1) // type = ICO
-	binary.LittleEndian.PutUint16(buf[4:], 1) // count = 1
-
-	// ICONDIRENTRY
-	buf[6] = byte(w)
-	buf[7] = byte(h)
-	buf[8] = 0                                   // color count (0 = >256 colors)
-	buf[9] = 0                                   // reserved
-	binary.LittleEndian.PutUint16(buf[10:], 1)   // planes
-	binary.LittleEndian.PutUint16(buf[12:], bpp) // bit count
-	binary.LittleEndian.PutUint32(buf[14:], uint32(biSize+pixelBytes+andMaskBytes))
-	binary.LittleEndian.PutUint32(buf[18:], uint32(imageDataOffset))
-
-	// BITMAPINFOHEADER
-	o := imageDataOffset
-	binary.LittleEndian.PutUint32(buf[o:], uint32(biSize))
-	binary.LittleEndian.PutUint32(buf[o+4:], uint32(w))
-	binary.LittleEndian.PutUint32(buf[o+8:], uint32(h*2)) // XOR + AND masks
-	binary.LittleEndian.PutUint16(buf[o+12:], 1)          // planes
-	binary.LittleEndian.PutUint16(buf[o+14:], bpp)        // bit count
-	binary.LittleEndian.PutUint32(buf[o+16:], 0)          // compression = BI_RGB
-	binary.LittleEndian.PutUint32(buf[o+20:], uint32(biSizeImage))
-	// remaining BITMAPINFOHEADER fields stay 0
-
-	// XOR (pixel) data — bottom-up row order, BGRA
-	o += biSize
-	for row := h - 1; row >= 0; row-- {
-		for col := 0; col < w; col++ {
-			idx := o + ((h-1-row)*w+col)*4
-			buf[idx+0] = b8   // B
-			buf[idx+1] = g8   // G
-			buf[idx+2] = r8   // R
-			buf[idx+3] = 0xFF // A (fully opaque)
-		}
-	}
-	// AND mask: all zeros = fully opaque (already zero from make)
-	return buf
-}
+// trayIcon is built from the drawings in assets/. The tray library always
+// loads the 32px frame and lets Windows scale it down, so that frame holds the
+// 16px drawing doubled pixel for pixel: scaled back to 16px it comes out exact
+// instead of blurred.
+//
+//go:embed tray.ico
+var trayIcon []byte
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
@@ -266,7 +212,7 @@ func main() {
 }
 
 func onReady(q *rdpwall.Quantom) {
-	systray.SetIcon(generateTrayIcon())
+	systray.SetIcon(trayIcon)
 	systray.SetTitle("RdpWall")
 	systray.SetTooltip("RdpWall – RDP brute-force protection")
 

@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.svg" width="320" alt="RdpWall"></p>
+
 # RdpWall
 
 A lightweight Fail2Ban-style brute-force protection tool for Windows RDP. It monitors the Windows Security event log for failed login attempts (Event ID 4625) and automatically blocks offending IPs via the Windows Firewall.

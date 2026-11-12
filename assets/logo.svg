@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="604" height="224" viewBox="24 16 604 224">
+  <defs>
+    <clipPath id="brick-field" clipPathUnits="userSpaceOnUse">
+      <polygon points="48,40 208,40 208,128.850 180.254,171.285 128,210.103 75.746,171.285 48,128.850"/>
+    </clipPath>
+  </defs>
+  <polygon points="24,16 232,16 232,136 198,188 128,240 58,188 24,136" fill="#344751"/>
+  <polygon points="36,28 220,28 220,132.425 189.127,179.643 128,225.051 66.873,179.643 36,132.425" fill="#F1E9DA"/>
+  <g fill="#B65F4B" clip-path="url(#brick-field)">
+    <rect x="48" y="40" width="104" height="52"/>
+    <rect x="160" y="40" width="104" height="52"/>
+    <rect x="-8" y="100" width="104" height="52"/>
+    <rect x="104" y="100" width="104" height="52"/>
+    <rect x="48" y="160" width="104" height="52"/>
+    <rect x="160" y="160" width="104" height="52"/>
+  </g>
+  <text x="256" y="137" fill="#B65F4B" font-family="Segoe UI, Inter, system-ui, sans-serif" font-size="80" font-weight="600">RdpWall</text>
+</svg>
