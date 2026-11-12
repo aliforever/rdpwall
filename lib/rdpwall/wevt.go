@@ -25,17 +25,18 @@ const (
 	evtBatchSize        = 64
 )
 
-// evtQueryXML queries a Windows Event Log channel and returns each matching
-// event rendered as a UTF-8 XML string, using the native wevtapi.dll API
-// directly — no PowerShell or external process spawn needed.
-func evtQueryXML(channel, query string) ([]string, error) {
+// evtQueryXML queries a Windows Event Log channel and calls handle with each
+// matching event rendered as a UTF-8 XML string, using the native wevtapi.dll
+// API directly — no PowerShell or external process spawn needed. It stops at
+// the first error, including one returned by handle.
+func evtQueryXML(channel, query string, handle func(xml string) error) error {
 	ch, err := windows.UTF16PtrFromString(channel)
 	if err != nil {
-		return nil, fmt.Errorf("EvtQuery channel: %w", err)
+		return fmt.Errorf("EvtQuery channel: %w", err)
 	}
 	q, err := windows.UTF16PtrFromString(query)
 	if err != nil {
-		return nil, fmt.Errorf("EvtQuery query: %w", err)
+		return fmt.Errorf("EvtQuery query: %w", err)
 	}
 
 	hQuery, _, e := procEvtQuery.Call(
@@ -45,11 +46,10 @@ func evtQueryXML(channel, query string) ([]string, error) {
 		evtQueryChannelPath,
 	)
 	if hQuery == 0 {
-		return nil, fmt.Errorf("EvtQuery: %w", e)
+		return fmt.Errorf("EvtQuery: %w", e)
 	}
 	defer procEvtClose.Call(hQuery)
 
-	var results []string
 	handles := make([]uintptr, evtBatchSize)
 
 	for {
@@ -66,27 +66,28 @@ func evtQueryXML(channel, query string) ([]string, error) {
 			// ERROR_NO_MORE_ITEMS = normal end of result set. Anything else
 			// means the result is incomplete, and callers must not act on it.
 			if e != windows.ERROR_NO_MORE_ITEMS {
-				return nil, fmt.Errorf("EvtNext: %w", e)
+				return fmt.Errorf("EvtNext: %w", e)
 			}
 			break
 		}
 
-		var renderErr error
+		// Every handle of the batch must be closed, also after an error.
+		var batchErr error
 		for i := uint32(0); i < returned; i++ {
-			if renderErr == nil {
+			if batchErr == nil {
 				var xml string
-				if xml, renderErr = renderEventXML(handles[i]); renderErr == nil {
-					results = append(results, xml)
+				if xml, batchErr = renderEventXML(handles[i]); batchErr == nil {
+					batchErr = handle(xml)
 				}
 			}
 			procEvtClose.Call(handles[i])
 		}
-		if renderErr != nil {
-			return nil, renderErr
+		if batchErr != nil {
+			return batchErr
 		}
 	}
 
-	return results, nil
+	return nil
 }
 
 // renderEventXML renders a single event handle to a UTF-8 XML string.

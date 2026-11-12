@@ -31,21 +31,19 @@ func queryRecentFailures(window time.Duration) (map[string][]FailedAudit, error)
 		int64(window/time.Millisecond),
 	)
 
-	xmlEvents, err := evtQueryXML("Security", query)
-	if err != nil {
-		return nil, fmt.Errorf("evtQueryXML: %w", err)
-	}
-
 	failedAudits := map[string][]FailedAudit{}
-	for _, xmlStr := range xmlEvents {
+	err := evtQueryXML("Security", query, func(xmlStr string) error {
 		ip, audit, err := parseFailedLogin(xmlStr)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if ip == "" {
-			continue
+		if ip != "" {
+			failedAudits[ip] = append(failedAudits[ip], audit)
 		}
-		failedAudits[ip] = append(failedAudits[ip], audit)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("evtQueryXML: %w", err)
 	}
 
 	return failedAudits, nil

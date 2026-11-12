@@ -31,7 +31,11 @@ func (netshFirewall) List() ([]string, error) {
 	script := "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; " +
 		"Get-NetFirewallRule -DisplayName '" + firewallRuleName + "' -ErrorAction SilentlyContinue | " +
 		"Get-NetFirewallAddressFilter | " +
-		"Select-Object -ExpandProperty RemoteAddress"
+		"Select-Object -ExpandProperty RemoteAddress; " +
+		// Finding no rule leaves the last command marked as failed, which
+		// powershell.exe turns into exit code 1. Real errors stop the script
+		// before this line.
+		"exit 0"
 
 	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encodedPS(script))
 	var stderr bytes.Buffer
