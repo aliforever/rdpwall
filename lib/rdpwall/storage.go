@@ -2,25 +2,39 @@ package rdpwall
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"sync"
 	"time"
 )
 
 type Storage interface {
-	ReadFailedSecurityAudits() (map[string][]FailedAudit, error) // IP Address -> FailedAudit{ Username, Count }
-	WriteFailedSecurityAudits(map[string][]FailedAudit) error
+	// PendBlockIP queues an IP for blocking. It reports true when the IP was
+	// already pending or blocked.
 	PendBlockIP(ip string) (bool, error)
 	PendingIPsToBeBlocked() ([]string, error)
+	RemovePendingIP(ip string) error
+
 	BlockedIPs() ([]string, error)
-	removePendingIP(ip string) error
-	BlockIP(ip string) error
+	// BlockedAt reports when an IP was blocked.
+	BlockedAt(ip string) (time.Time, bool)
+	// BlockIP marks an IP as blocked since at and removes it from the pending
+	// queue. An IP that is already blocked keeps its original time.
+	BlockIP(ip string, at time.Time) error
+	UnblockIP(ip string) error
+
+	// IgnoreBefore is the cutoff set by the last "unban all": failures logged
+	// before it no longer count toward a ban.
+	IgnoreBefore() time.Time
+	SetIgnoreBefore(t time.Time) error
 }
 
 type Data struct {
 	PendingIPsToBeBlocked []string
-	FailedSecurityAudits  map[string][]FailedAudit
 	BlockedIPs            []string
+	BlockedAt             map[string]time.Time `json:",omitempty"`
+	IgnoreBefore          time.Time
 }
 
 // FileStorage implements Storage
@@ -41,12 +55,22 @@ func NewFileStorage(filename string) (*FileStorage, error) {
 
 	var data *Data
 	err = json.NewDecoder(f).Decode(&data)
-	if err != nil {
-		if err.Error() != "EOF" {
-			return nil, err
-		} else {
-			data = &Data{}
-			err = nil
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	if data == nil {
+		data = &Data{}
+	}
+	if data.BlockedAt == nil {
+		data.BlockedAt = map[string]time.Time{}
+	}
+
+	// State files written by older versions have no block times. Start the
+	// ban window now for those IPs.
+	now := time.Now()
+	for _, ip := range data.BlockedIPs {
+		if _, ok := data.BlockedAt[ip]; !ok {
+			data.BlockedAt[ip] = now
 		}
 	}
 
@@ -56,145 +80,136 @@ func NewFileStorage(filename string) (*FileStorage, error) {
 	}, nil
 }
 
-func (s *FileStorage) ReadFailedSecurityAudits() (map[string][]FailedAudit, error) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	file, err := os.OpenFile(s.filename, os.O_RDONLY|os.O_CREATE, 0666)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var failedAudits map[string][]FailedAudit
-
-	err = json.NewDecoder(file).Decode(&failedAudits)
-	if err != nil {
-		return nil, err
-	}
-
-	return failedAudits, nil
-}
-
-func (s *FileStorage) WriteFailedSecurityAudits(failedAudits map[string][]FailedAudit) error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	file, err := os.OpenFile(s.filename, os.O_WRONLY|os.O_CREATE, 0666)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	return json.NewEncoder(file).Encode(failedAudits)
-}
-
 func (s *FileStorage) PendBlockIP(ip string) (bool, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	foundInPend := false
-	for _, pendingIP := range s.data.PendingIPsToBeBlocked {
-		if pendingIP == ip {
-			foundInPend = true
-			break
-		}
-	}
-
-	if foundInPend {
+	if contains(s.data.PendingIPsToBeBlocked, ip) || contains(s.data.BlockedIPs, ip) {
 		return true, nil
 	}
 
-	foundInBlocked := false
-	for _, blockedIP := range s.data.BlockedIPs {
-		if blockedIP == ip {
-			foundInBlocked = true
-			break
-		}
-	}
+	s.data.PendingIPsToBeBlocked = append(s.data.PendingIPsToBeBlocked, ip)
 
-	if !foundInBlocked {
-		s.data.PendingIPsToBeBlocked = append(s.data.PendingIPsToBeBlocked, ip)
-	}
-
-	return foundInBlocked, nil
+	return false, nil
 }
 
 func (s *FileStorage) BlockedIPs() ([]string, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	return s.data.BlockedIPs, nil
+	return append([]string(nil), s.data.BlockedIPs...), nil
+}
+
+func (s *FileStorage) BlockedAt(ip string) (time.Time, bool) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	t, ok := s.data.BlockedAt[ip]
+	return t, ok
 }
 
 func (s *FileStorage) PendingIPsToBeBlocked() ([]string, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	return s.data.PendingIPsToBeBlocked, nil
+	return append([]string(nil), s.data.PendingIPsToBeBlocked...), nil
 }
 
+func (s *FileStorage) RemovePendingIP(ip string) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	s.data.PendingIPsToBeBlocked = without(s.data.PendingIPsToBeBlocked, ip)
+
+	return nil
+}
+
+func (s *FileStorage) BlockIP(ip string, at time.Time) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if !contains(s.data.BlockedIPs, ip) {
+		s.data.BlockedIPs = append(s.data.BlockedIPs, ip)
+		s.data.BlockedAt[ip] = at
+	}
+	s.data.PendingIPsToBeBlocked = without(s.data.PendingIPsToBeBlocked, ip)
+
+	return nil
+}
+
+func (s *FileStorage) UnblockIP(ip string) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	s.data.BlockedIPs = without(s.data.BlockedIPs, ip)
+	delete(s.data.BlockedAt, ip)
+	s.data.PendingIPsToBeBlocked = without(s.data.PendingIPsToBeBlocked, ip)
+
+	return nil
+}
+
+func (s *FileStorage) IgnoreBefore() time.Time {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	return s.data.IgnoreBefore
+}
+
+func (s *FileStorage) SetIgnoreBefore(t time.Time) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	s.data.IgnoreBefore = t
+
+	return nil
+}
+
+// Sync writes the state to disk every interval. It never returns.
 func (s *FileStorage) Sync(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 
-	for {
-		select {
-		case <-ticker.C:
-			s.sync()
+	for range ticker.C {
+		if err := s.Flush(); err != nil {
+			logf("STORAGE ERROR: could not save %s: %v", s.filename, err)
 		}
 	}
 }
 
-func (s *FileStorage) sync() {
+// Flush writes the state to disk now. The file is replaced in one step, so a
+// crash mid-write cannot leave a truncated state file behind.
+func (s *FileStorage) Flush() error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-
-	file, err := os.OpenFile(s.filename, os.O_WRONLY|os.O_CREATE, 0666)
-	if err != nil {
-		panic(err)
-	}
-	defer file.Close()
 
 	j, err := json.Marshal(s.data)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	_, err = file.Write(j)
-	if err != nil {
-		panic(err)
+	tmp := s.filename + ".tmp"
+	if err := os.WriteFile(tmp, j, 0666); err != nil {
+		return err
 	}
+
+	return os.Rename(tmp, s.filename)
 }
 
-func (s *FileStorage) BlockIP(ip string) error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	found := false
-	for _, blockedIP := range s.data.BlockedIPs {
-		if blockedIP == ip {
-			found = true
-			break
+func contains(list []string, v string) bool {
+	for _, item := range list {
+		if item == v {
+			return true
 		}
 	}
-
-	if !found {
-		s.data.BlockedIPs = append(s.data.BlockedIPs, ip)
-	}
-
-	return s.removePendingIP(ip)
+	return false
 }
 
-func (s *FileStorage) removePendingIP(ip string) error {
-	var newPendingIPs []string
-
-	for _, pendingIP := range s.data.PendingIPsToBeBlocked {
-		if pendingIP != ip {
-			newPendingIPs = append(newPendingIPs, pendingIP)
+// without returns a new slice holding list minus every occurrence of v.
+func without(list []string, v string) []string {
+	var out []string
+	for _, item := range list {
+		if item != v {
+			out = append(out, item)
 		}
 	}
-
-	s.data.PendingIPsToBeBlocked = newPendingIPs
-
-	return nil
+	return out
 }

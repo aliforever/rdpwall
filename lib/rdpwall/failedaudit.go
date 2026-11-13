@@ -1,13 +1,8 @@
 package rdpwall
 
-import (
-	"time"
-	"www.velocidex.com/golang/evtx"
-)
+import "time"
 
 type FailedAudit struct {
 	Username string
 	Time     time.Time
-
-	EventRecord *evtx.EventRecord
 }

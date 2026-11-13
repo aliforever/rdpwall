@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="16" height="16" viewBox="0 0 16 16">
+  <defs>
+    <clipPath id="brick-field" clipPathUnits="userSpaceOnUse">
+      <polygon points="3,3 13,3 13,7 8,12 3,7"/>
+    </clipPath>
+  </defs>
+  <polygon points="1,1 15,1 15,8 12,12 8,15 4,12 1,8" fill="#344751"/>
+  <polygon points="2,2 14,2 14,8 8,14 2,8" fill="#F1E9DA"/>
+  <g fill="#B65F4B" clip-path="url(#brick-field)">
+    <rect x="2" y="3" width="7" height="3"/>
+    <rect x="10" y="3" width="7" height="3"/>
+    <rect x="-2" y="7" width="7" height="6"/>
+    <rect x="6" y="7" width="7" height="6"/>
+  </g>
+</svg>
