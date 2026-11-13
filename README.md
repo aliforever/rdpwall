@@ -23,7 +23,14 @@ A lightweight Fail2Ban-style brute-force protection tool for Windows RDP. It mon
 
 ## Installation
 
-Download the latest `rdpwall.exe` from the [Releases](../../releases) page and run it as administrator. No installer required.
+1. Download the latest `rdpwall.exe` from the [Releases](../../releases) page.
+2. Put it in a folder of its own, for example `C:\Program Files\RdpWall`. The state file is written next to it.
+3. Run it as administrator. No installer required.
+4. Right-click the tray icon and tick **Launch on Startup** to have it start when you log on.
+
+### Upgrading from 0.0.x
+
+Replace the executable and start it. The old state file is read as it is. Existing bans have no recorded block time, so their 24 hours start at the first launch of the new version. If you used Launch on Startup before, untick and tick it once to replace the old registry entry with the scheduled task.
 
 ## Building from source
 
@@ -55,6 +62,14 @@ State is kept in `failed_audits.json` next to the executable.
 | Unban All | Remove all firewall blocks created by RdpWall. Failures logged before the click no longer count toward a ban |
 | Exit | Stop RdpWall |
 
+## Limitations
+
+- **There is no allowlist.** Your own address is blocked like any other after more than 3 failed logins in 24 hours. Make sure you have another way into the server, such as the provider's console, before relying on RdpWall.
+- **Every failed logon counts, not only RDP.** Any Event ID 4625 that carries a source address is counted, whichever service it came from.
+- **A blocked address is blocked on every port**, not only on the RDP port.
+- **It runs only while you are logged on.** Launch on Startup starts RdpWall at logon, so after a reboot nothing is scanned until you sign in. Existing firewall rules stay in place meanwhile.
+- **Each scan re-reads the whole 24-hour window.** On a log with 25,000 failed logins that takes about 4 to 5 seconds of CPU every 30 seconds.
+
 ## Configuration
 
 Thresholds are defined as constants in `lib/rdpwall/rdpwall.go`:
@@ -65,6 +80,17 @@ Thresholds are defined as constants in `lib/rdpwall/rdpwall.go`:
 | `failureThreshold` | `3` | Number of failures above which an IP is blocked |
 | `scanInterval` | `30s` | How often the event log is queried |
 | `blockInterval` | `5s` | How often the pending queue is flushed to the firewall |
+
+## Development
+
+```sh
+go test ./...                              # runs on any OS
+GOOS=windows GOARCH=amd64 go vet ./...
+```
+
+The logo and icon drawings are in `assets/`. The tray icon is embedded from `cmd/rdpwall/tray.ico`, and the executable's icon comes from `cmd/rdpwall/rsrc_windows_amd64.syso`, which is rebuilt from `assets/app.ico` with `go generate ./cmd/rdpwall/`.
+
+Pushing a `v*` tag builds `rdpwall.exe` and publishes it as a GitHub release.
 
 ## Tested on
 
